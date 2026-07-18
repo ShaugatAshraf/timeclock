@@ -1,0 +1,11 @@
+{
+  "name": "Timeclock",
+  "short_name": "Timeclock",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#fcfcfa",
+  "theme_color": "#fcfcfa",
+  "icons": [
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

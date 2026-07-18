@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Timeclock</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Timeclock">
+<meta name="theme-color" content="#fcfcfa">
+<style>
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --ink:#1a1d23; --mut:#8b909a; --line:#e6e8e6; --blue:#24406b; --bg:#f4f5f4; --card:#fff;
+    --r:10px; --rs:8px;
+    --shadow:0 1px 2px rgba(20,24,30,.05), 0 10px 28px -14px rgba(20,24,30,.14);
+  }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, 'Inter', system-ui, sans-serif; font-size: 15px;
+    padding: calc(20px + env(safe-area-inset-top)) 16px calc(60px + env(safe-area-inset-bottom));
+    display: flex; justify-content: center;
+    overscroll-behavior-y: none;
+  }
+  .col { width: 100%; max-width: 560px; }
+  .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; }
+  header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  header h1 { font-size:13px; font-weight:600; letter-spacing:.12em; text-transform:uppercase;
+              display:flex; align-items:center; gap:8px; }
+  header h1::before { content:''; width:9px; height:9px; border-radius:3px; background:var(--blue); }
+  .hr { display:flex; flex-direction:column; align-items:flex-end; line-height:1.4; }
+  .hr .date { font-size:12px; color:var(--mut); }
+  .hr .now { font-size:13px; font-weight:500; }
+
+  .jobs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  .jobs button { background:var(--card); border:1px solid var(--line); padding:9px 15px; font-size:14px;
+                 color:var(--mut); border-radius:var(--rs); transition:all .15s ease; }
+  .jobs button.on { background:var(--ink); border-color:var(--ink); color:#fff; font-weight:500; }
+  .jobs button.dot::before { content:''; display:inline-block; width:6px; height:6px; border-radius:50%;
+    background:var(--blue); margin-right:7px; vertical-align:1px; }
+  .jobs button.on.dot::before { background:#9ab8e8; }
+  .jobs .add { border-style:dashed; background:transparent; }
+
+  .punch { background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+           padding:32px 24px; text-align:center; box-shadow:var(--shadow); transition:border-color .2s, box-shadow .2s; }
+  .punch.on { border-color:var(--blue); box-shadow:0 0 0 1px var(--blue), var(--shadow); }
+  .punch .big { font-size:42px; font-weight:600; letter-spacing:-.01em; }
+  .punch .sub { color:var(--mut); margin-top:6px; font-size:13px; }
+  button { font:inherit; cursor:pointer; color:inherit; }
+  .btn { margin-top:24px; padding:15px 42px; border:1px solid var(--ink); background:var(--ink); color:#fff;
+         font-size:13px; letter-spacing:.1em; text-transform:uppercase; font-weight:500;
+         border-radius:var(--rs); transition:all .15s ease; }
+  .btn:active { transform:scale(.98); }
+  .btn.out { background:var(--blue); border-color:var(--blue); }
+  .btn:disabled { opacity:.35; }
+
+  .toolbar { display:flex; gap:6px; margin:16px 0 34px; flex-wrap:wrap; }
+  .lnk { background:none; border:none; padding:9px 13px; color:var(--mut); font-size:14px;
+         border-radius:var(--rs); transition:all .15s ease; }
+  .lnk.on { background:#e7ecf4; color:var(--blue); font-weight:500; }
+
+  .panel { background:var(--card); border:1px solid var(--line); padding:18px; margin:-18px 0 34px;
+           border-radius:var(--r); box-shadow:var(--shadow); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); }
+  input { font:inherit; padding:9px 11px; border:1px solid var(--line); background:var(--card);
+          border-radius:var(--rs); -webkit-appearance:none; appearance:none; min-height:42px;
+          transition:border-color .15s, box-shadow .15s; }
+  input[type=checkbox] { min-height:0; width:18px; height:18px; -webkit-appearance:checkbox; appearance:checkbox; accent-color:var(--blue); }
+  input:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(36,64,107,.12); }
+  .small { padding:11px 16px; border:1px solid var(--ink); background:none; font-size:14px;
+           border-radius:var(--rs); transition:all .15s ease; }
+  .ghost { border-color:var(--line); color:var(--mut); }
+  .danger { border-color:var(--line); color:var(--mut); }
+  .hint { color:var(--mut); font-size:12px; margin-top:12px; line-height:1.5; }
+  .hint code { font-family:ui-monospace,monospace; font-size:11px; background:var(--bg); padding:2px 5px;
+               border:1px solid var(--line); border-radius:5px; word-break:break-all; }
+  .rule { display:flex; gap:10px; align-items:flex-end; margin-top:12px; }
+  .legend { display:inline-block; width:10px; height:10px; margin-right:6px; border-radius:3px; }
+  .sep { border:none; border-top:1px solid var(--line); margin:18px 0 14px; }
+  .check { display:flex; gap:10px; align-items:center; font-size:14px; margin-top:14px; }
+  .status { font-size:13px; margin-top:10px; }
+  .status.ok { color:var(--blue); }
+  .status.err { color:#b3402f; }
+
+  .mnav { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px; }
+  .mnav h2 { font-size:15px; font-weight:500; }
+  .mnav h2 span { color:var(--mut); font-weight:400; }
+  .arrows button { background:none; border:none; color:var(--mut); font-size:18px; padding:6px 12px;
+                   border-radius:6px; }
+  .totals { display:flex; gap:26px; align-items:center; background:var(--card); border:1px solid var(--line);
+            border-radius:var(--r); padding:16px 18px; box-shadow:var(--shadow); margin-bottom:14px; }
+  .totals div span { display:block; }
+  .totals .n { font-size:24px; font-weight:600; }
+  .totals .l { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); margin-top:2px; }
+  .totals .export { margin-left:auto; }
+  .listcard { background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+              padding:2px 16px; box-shadow:var(--shadow); }
+
+  table { width:100%; border-collapse:collapse; }
+  td { padding:13px 0; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  tr.editing td { background:#f2f5f9; }
+  .strip { display:flex; height:5px; width:100%; max-width:90px; background:var(--line); border-radius:3px; overflow:hidden; }
+  .strip i { display:block; height:100%; }
+  .strip .b { background:#c9cdc9; }
+  .strip .s { background:var(--blue); }
+  td.num { text-align:right; white-space:nowrap; }
+  .autotag { color:var(--blue); font-size:10px; text-transform:uppercase; letter-spacing:.06em; margin-left:6px; }
+  .x { background:none; border:none; color:var(--mut); font-size:16px; padding:6px 0 6px 12px; }
+  .x.warn { color:#b3402f !important; font-size:12px; font-weight:600; }
+  .empty { color:var(--mut); padding:30px 0; text-align:center; font-size:13px; }
+
+  #toast {
+    position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:12px 20px; font-size:13px;
+    opacity:0; pointer-events:none; transition:opacity .25s; max-width:90vw; text-align:center;
+    border-radius:var(--r); box-shadow:var(--shadow);
+  }
+  #toast.show { opacity:1; }
+  @media (max-width:400px){ .punch .big{font-size:34px} .totals{gap:16px} td{font-size:13px} }
+</style>
+</head>
+<body>
+<div class="col">
+  <header>
+    <h1>Timeclock</h1>
+    <div class="hr"><span class="date" id="headdate"></span><span class="now mono" id="headclock"></span></div>
+  </header>
+  <div class="jobs" id="jobs"></div>
+  <div id="punch"></div>
+  <div class="toolbar">
+    <button class="lnk" id="tab-manual">Add entry</button>
+    <button class="lnk" id="tab-rates">Job &amp; pay rates</button>
+    <button class="lnk" id="tab-loc">Location</button>
+  </div>
+  <div id="panel"></div>
+  <div id="month"></div>
+</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ---------- storage (localStorage with in-memory fallback) ---------- */
+const KEY = "timeclock:data";
+const mem = {};
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return mem[k] ?? null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { mem[k] = v; } },
+};
+
+const defaultRates = () => ({ base: 12, currency: "€", rules: [{ id: Date.now(), start: "23:00", end: "06:00", rate: 15 }] });
+const DEFAULT = () => ({ jobs: [{ id: 1, name: "Job 1", rates: defaultRates(), entries: [], location: null }], selected: 1, active: null });
+
+let data;
+try { data = store.get(KEY) ? JSON.parse(store.get(KEY)) : DEFAULT(); } catch { data = DEFAULT(); }
+if (!data.jobs) data = DEFAULT();
+data.jobs.forEach((j) => { if (!("location" in j)) j.location = null; });
+
+let panel = null; // 'manual' | 'rates' | 'loc' | null
+let editingId = null; // entry id being edited in the manual panel
+let confirmId = null;  // entry id or "job" awaiting delete confirmation
+let confirmTimer = null;
+function askConfirm(id, rerender) {
+  confirmId = id;
+  clearTimeout(confirmTimer);
+  confirmTimer = setTimeout(() => { confirmId = null; rerender(); }, 3000);
+  rerender();
+}
+let view = monthKey(Date.now());
+const save = () => store.set(KEY, JSON.stringify(data));
+
+/* ---------- time helpers ---------- */
+const pad = (n) => String(n).padStart(2, "0");
+function fmtClock(ms) { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+function fmtClockS(ms) { const d = new Date(ms); return fmtClock(ms) + ":" + pad(d.getSeconds()); }
+function fmtDate(ms) { return new Date(ms).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); }
+function fmtDur(ms) { const m = Math.round(ms / 60000); return Math.floor(m / 60) + ":" + pad(m % 60); }
+function fmtDurS(ms) { const s = Math.floor(ms / 1000); return Math.floor(s / 3600) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60); }
+function fmtHeadDate(ms) { return new Date(ms).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }); }
+function toDateInput(ms) { const d = new Date(ms); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function parseHM(s) { const p = s.split(":"); return Number(p[0]) * 60 + (Number(p[1]) || 0); }
+function inWindow(mins, rule) {
+  const s = parseHM(rule.start), e = parseHM(rule.end);
+  if (s === e) return false;
+  return s < e ? (mins >= s && mins < e) : (mins >= s || mins < e);
+}
+function monthKey(ms) { const d = new Date(ms); return d.getFullYear() + "-" + pad(d.getMonth() + 1); }
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+/* Minute-walk pay calculation; first matching rule wins, else base. */
+function breakdown(start, end, rates) {
+  let total = 0; const segs = [];
+  for (let t = start; t < end; t += 60000) {
+    const d = new Date(t + 30000);
+    const mins = d.getHours() * 60 + d.getMinutes();
+    const rule = rates.rules.find((r) => inWindow(mins, r));
+    const rate = rule ? Number(rule.rate) : Number(rates.base);
+    const dur = Math.min(60000, end - t);
+    total += rate * (dur / 3600000);
+    const last = segs[segs.length - 1];
+    if (last && last.rate === rate && last.special === !!rule) last.ms += dur;
+    else segs.push({ rate, ms: dur, special: !!rule });
+  }
+  return { total, segs };
+}
+
+/* ---------- state accessors ---------- */
+const job = () => data.jobs.find((j) => j.id === data.selected) || data.jobs[0];
+const activeJob = () => (data.active ? data.jobs.find((j) => j.id === data.active.jobId) : null);
+const monthEntries = () => job().entries.filter((e) => monthKey(e.start) === view).sort((a, b) => b.start - a.start);
+
+/* ---------- actions ---------- */
+function selectJob(id) { data.selected = id; save(); render(); }
+function addJob() {
+  const id = Date.now();
+  data.jobs.push({ id, name: "Job " + (data.jobs.length + 1), rates: defaultRates(), entries: [], location: null });
+  data.selected = id; panel = "rates"; save(); render();
+}
+function deleteJob() {
+  if (data.jobs.length < 2) { toast("You need at least one job — rename this one instead."); return; }
+  const j = job();
+  data.jobs = data.jobs.filter((x) => x.id !== j.id);
+  if (data.active && data.active.jobId === j.id) data.active = null;
+  data.selected = data.jobs[0].id; panel = null; confirmId = null; save(); render();
+  toast("Job deleted");
+}
+function checkIn(auto, jobId) {
+  const id = jobId || job().id;
+  data.active = { jobId: id, start: Date.now(), auto: !!auto };
+  save(); render();
+  if (auto) toast("Checked in automatically · " + data.jobs.find((j) => j.id === id).name);
+}
+function checkOut(auto) {
+  if (!data.active) return;
+  const { jobId, start } = data.active; const end = Date.now();
+  const wasAuto = data.active.auto || !!auto;
+  const j = data.jobs.find((x) => x.id === jobId);
+  j.entries.push({ id: end, start, end, auto: wasAuto });
+  data.active = null; view = monthKey(start); save(); render();
+  if (auto) toast("Checked out automatically · " + fmtDur(end - start) + " recorded");
+}
+const overlaps = (a, b) => a.start < b.end && b.start < a.end;
+function addManual() {
+  const date = document.getElementById("m-date").value;
+  const from = document.getElementById("m-from").value;
+  const to = document.getElementById("m-to").value;
+  if (!date || !from || !to) return;
+  const [y, mo, d] = date.split("-").map(Number);
+  const [fh, fm] = from.split(":").map(Number);
+  const [th, tm] = to.split(":").map(Number);
+  const s = new Date(y, mo - 1, d, fh, fm).getTime();
+  let e = new Date(y, mo - 1, d, th, tm).getTime();
+  if (e <= s) e += 24 * 3600000;
+  const j = job();
+  const wasEditing = editingId;
+  /* drop the entry being edited + any auto entry overlapping the new period */
+  const before = j.entries.length;
+  j.entries = j.entries.filter((x) => x.id !== editingId && !(x.auto && overlaps(x, { start: s, end: e })));
+  const replaced = before - j.entries.length - (wasEditing ? 1 : 0);
+  j.entries.push({ id: Date.now(), start: s, end: e, auto: false });
+  editingId = null; panel = null; view = monthKey(s); save(); render();
+  if (wasEditing) toast("Entry updated");
+  else if (replaced > 0) toast("Replaced " + replaced + " auto entr" + (replaced > 1 ? "ies" : "y") + " with your manual times");
+}
+function removeEntry(id) {
+  if (editingId === id) { editingId = null; panel = null; }
+  job().entries = job().entries.filter((e) => e.id !== id);
+  confirmId = null; save(); render();
+}
+function startEdit(id) {
+  editingId = id; panel = "manual";
+  renderTabs(); renderPanel();
+  document.getElementById("panel").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function addRule() { job().rates.rules.push({ id: Date.now(), start: "23:00", end: "06:00", rate: job().rates.base }); save(); render(); }
+function removeRule(id) { job().rates.rules = job().rates.rules.filter((r) => r.id !== id); save(); render(); }
+function shiftMonth(dir) {
+  const [y, m] = view.split("-").map(Number);
+  view = monthKey(new Date(y, m - 1 + dir, 1).getTime());
+  renderMonth();
+}
+function exportCSV() {
+  const j = job(); const cur = j.rates.currency || "€";
+  const list = monthEntries().slice().reverse();
+  const rows = [["Date", "Check in", "Check out", "Hours", "Pay (" + cur + ")", "Source"]];
+  let tms = 0, tpay = 0;
+  list.forEach((e) => {
+    const b = breakdown(e.start, e.end, j.rates);
+    tms += e.end - e.start; tpay += b.total;
+    rows.push([new Date(e.start).toISOString().slice(0, 10), fmtClock(e.start), fmtClock(e.end),
+      ((e.end - e.start) / 3600000).toFixed(2), b.total.toFixed(2), e.auto ? "auto" : "manual"]);
+  });
+  rows.push(["Total", "", "", (tms / 3600000).toFixed(2), tpay.toFixed(2), ""]);
+  const blob = new Blob([rows.map((r) => r.join(",")).join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = j.name.replace(/\s+/g, "-").toLowerCase() + "-" + view + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* ---------- location: geofence while app is open + Shortcuts URL triggers ---------- */
+function dist(lat1, lng1, lat2, lng2) {
+  const R = 6371000, toR = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toR, dLng = (lng2 - lng1) * toR;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * toR) * Math.cos(lat2 * toR) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+let watchId = null;
+const geoState = {}; // jobId -> { inside: bool|null, streak: 0, dist: null }
+
+function syncWatch() {
+  const any = data.jobs.some((j) => j.location && j.location.enabled);
+  if (any && watchId === null && "geolocation" in navigator) {
+    watchId = navigator.geolocation.watchPosition(onPos, () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
+  } else if (!any && watchId !== null) {
+    navigator.geolocation.clearWatch(watchId); watchId = null;
+  }
+}
+
+function onPos(p) {
+  if (p.coords.accuracy > 200) return; // ignore very fuzzy fixes
+  for (const j of data.jobs) {
+    const L = j.location;
+    if (!L || !L.enabled) continue;
+    const d = dist(p.coords.latitude, p.coords.longitude, L.lat, L.lng);
+    const st = geoState[j.id] || (geoState[j.id] = { inside: null, streak: 0, dist: null });
+    st.dist = d;
+    const nowInside = d <= (Number(L.radius) || 150);
+    if (st.inside === null) { st.inside = nowInside; st.streak = 0; continue; } // first fix: just set baseline
+    if (nowInside !== st.inside) {
+      st.streak++;
+      if (st.streak >= 2) { // two consecutive fixes on the other side -> real transition
+        st.inside = nowInside; st.streak = 0;
+        if (nowInside && !data.active) checkIn(true, j.id);
+        else if (!nowInside && data.active && data.active.jobId === j.id) checkOut(true);
+      }
+    } else st.streak = 0;
+  }
+  const el = document.getElementById("loc-live");
+  if (el) {
+    const st = geoState[job().id];
+    if (st && st.dist != null) el.textContent = "Current distance: " + Math.round(st.dist) + " m " + (st.inside ? "(inside)" : "(outside)");
+  }
+}
+
+/* Shortcuts triggers: open URL ?auto=in or ?auto=out (optionally &job=Name) */
+function handleUrlTrigger() {
+  const q = new URLSearchParams(location.search);
+  const t = q.get("auto");
+  if (!t) return;
+  let j = job();
+  const wanted = q.get("job");
+  if (wanted) {
+    const found = data.jobs.find((x) => x.name.toLowerCase() === wanted.toLowerCase() || String(x.id) === wanted);
+    if (found) { j = found; data.selected = found.id; }
+  }
+  if (t === "in" && !data.active) checkIn(true, j.id);
+  else if (t === "out" && data.active) checkOut(true);
+  else if (t === "in" && data.active) toast("Already checked in — arrival ignored");
+  else if (t === "out" && !data.active) toast("Not checked in — departure ignored");
+  history.replaceState(null, "", location.pathname); // clean the URL so reloads don't re-trigger
+}
+
+/* ---------- render ---------- */
+function render() { renderJobs(); renderPunch(); renderTabs(); renderPanel(); renderMonth(); syncWatch(); }
+
+function renderJobs() {
+  document.getElementById("jobs").innerHTML =
+    data.jobs.map((j) =>
+      '<button class="' + (j.id === job().id ? "on " : "") + (data.active && data.active.jobId === j.id ? "dot" : "") +
+      '" data-job="' + j.id + '">' + esc(j.name) + "</button>"
+    ).join("") + '<button class="add" id="addjob">+ Add job</button>';
+  document.querySelectorAll("#jobs [data-job]").forEach((b) => b.onclick = () => selectJob(Number(b.dataset.job)));
+  document.getElementById("addjob").onclick = addJob;
+}
+
+function renderPunch() {
+  const el = document.getElementById("punch");
+  const now = Date.now();
+  if (data.active && data.active.jobId === job().id) {
+    const aj = activeJob();
+    const live = breakdown(data.active.start, now, aj.rates);
+    el.innerHTML = '<div class="punch on"><div class="big mono" id="bigclock">' + fmtDurS(now - data.active.start) +
+      '</div><div class="sub mono">in since ' + fmtClock(data.active.start) + (data.active.auto ? " (auto)" : "") +
+      ' · <span id="livepay">' + (aj.rates.currency || "€") + live.total.toFixed(2) + '</span> so far</div>' +
+      '<button class="btn out" id="punchbtn">Check out</button></div>';
+    document.getElementById("punchbtn").onclick = () => checkOut(false);
+  } else if (data.active) {
+    el.innerHTML = '<div class="punch"><div class="big mono" id="bigclock">' + fmtDurS(now - data.active.start) +
+      '</div><div class="sub">Checked in on ' + esc(activeJob().name) + ' — switch to that tab to check out</div>' +
+      '<button class="btn" disabled>Check in</button></div>';
+  } else {
+    el.innerHTML = '<div class="punch"><div class="big mono" id="bigclock">' + fmtClockS(now) +
+      '</div><div class="sub">Not checked in · ' + esc(job().name) + '</div>' +
+      '<button class="btn" id="punchbtn">Check in</button></div>';
+    document.getElementById("punchbtn").onclick = () => checkIn(false);
+  }
+}
+
+function renderTabs() {
+  document.getElementById("tab-manual").className = "lnk" + (panel === "manual" ? " on" : "");
+  document.getElementById("tab-rates").className = "lnk" + (panel === "rates" ? " on" : "");
+  document.getElementById("tab-loc").className = "lnk" + (panel === "loc" ? " on" : "");
+}
+document.getElementById("tab-manual").onclick = () => { panel = panel === "manual" ? null : "manual"; if (panel !== "manual") editingId = null; renderTabs(); renderPanel(); };
+document.getElementById("tab-rates").onclick = () => { panel = panel === "rates" ? null : "rates"; renderTabs(); renderPanel(); };
+document.getElementById("tab-loc").onclick = () => { panel = panel === "loc" ? null : "loc"; renderTabs(); renderPanel(); };
+
+function renderPanel() {
+  const el = document.getElementById("panel");
+  if (!panel) { el.innerHTML = ""; return; }
+  const j = job(); const r = j.rates;
+
+  if (panel === "manual") {
+    const ed = editingId ? j.entries.find((x) => x.id === editingId) : null;
+    if (editingId && !ed) editingId = null;
+    el.innerHTML = '<div class="panel"><div class="row">' +
+      '<div class="field"><label>Date</label><input type="date" id="m-date" value="' + (ed ? toDateInput(ed.start) : "") + '"></div>' +
+      '<div class="field"><label>Check in</label><input type="time" id="m-from" value="' + (ed ? fmtClock(ed.start) : "") + '"></div>' +
+      '<div class="field"><label>Check out</label><input type="time" id="m-to" value="' + (ed ? fmtClock(ed.end) : "") + '"></div>' +
+      '<button class="small" id="m-save">' + (ed ? "Update entry" : "Save entry") + '</button>' +
+      (ed ? '<button class="small ghost" id="m-cancel">Cancel</button>' : "") + '</div>' +
+      '<p class="hint">' + (ed
+        ? "Editing the entry from " + fmtDate(ed.start) + " (" + fmtClock(ed.start) + "\u2013" + fmtClock(ed.end) + "). Updating marks it as manual."
+        : "Saves to " + esc(j.name) + ". If check-out is earlier than check-in, it counts as the next day. Manual times replace any overlapping auto-tracked entry.") +
+      "</p></div>";
+    document.getElementById("m-save").onclick = addManual;
+    const mc = document.getElementById("m-cancel");
+    if (mc) mc.onclick = () => { editingId = null; panel = null; renderTabs(); renderPanel(); renderMonth(); };
+    return;
+  }
+
+  if (panel === "loc") {
+    const L = j.location;
+    const base = location.origin + location.pathname;
+    el.innerHTML = '<div class="panel">' +
+      '<div class="row">' +
+      '<button class="small" id="loc-set">' + (L ? "Update to current location" : "Set current location as workplace") + '</button>' +
+      '<div class="field"><label>Radius (m)</label><input type="number" inputmode="numeric" id="loc-radius" style="width:90px" value="' + esc(L ? L.radius : 150) + '"></div>' +
+      '</div>' +
+      '<div class="status ' + (L ? "ok" : "") + '" id="loc-status">' +
+      (L ? "Workplace saved for " + esc(j.name) + " (±" + Math.round(L.acc || 0) + " m accuracy when set)" : "No workplace set for " + esc(j.name) + " yet") + "</div>" +
+      '<div class="status" id="loc-live"></div>' +
+      '<label class="check"><input type="checkbox" id="loc-on"' + (L && L.enabled ? " checked" : "") + (L ? "" : " disabled") + '> Auto check in/out while the app is open</label>' +
+      '<p class="hint">When enabled and the app is open, arriving within the radius checks you in and leaving checks you out (only if you forget to do it yourself). Auto entries are marked and are replaced by your manual times.</p>' +
+      '<hr class="sep">' +
+      '<p class="hint"><strong>Background tracking (recommended):</strong> iPhone web apps can\u2019t watch your location in the background — but the Shortcuts app can. In <strong>Shortcuts → Automation → New Automation → Arrive</strong>, pick your workplace, set \u201cRun Immediately\u201d, and add the action <em>Open URLs</em> with:<br><code>' + esc(base) + '?auto=in&job=' + encodeURIComponent(j.name) + '</code><br>Then create a second automation for <strong>Leave</strong> with:<br><code>' + esc(base) + '?auto=out</code><br>Now arriving/leaving opens the app for a second and records the time automatically — even if it was closed.</p>' +
+      '</div>';
+
+    document.getElementById("loc-set").onclick = () => {
+      const st = document.getElementById("loc-status");
+      st.className = "status"; st.textContent = "Getting location…";
+      if (!("geolocation" in navigator)) { st.className = "status err"; st.textContent = "Location not available in this browser."; return; }
+      navigator.geolocation.getCurrentPosition((p) => {
+        j.location = {
+          lat: p.coords.latitude, lng: p.coords.longitude,
+          acc: p.coords.accuracy,
+          radius: Number(document.getElementById("loc-radius").value) || 150,
+          enabled: j.location ? j.location.enabled : true,
+        };
+        delete geoState[j.id];
+        save(); renderPanel(); syncWatch();
+        toast("Workplace location saved for " + j.name);
+      }, (err) => {
+        st.className = "status err";
+        st.textContent = "Couldn\u2019t get location — check that location access is allowed for this app in iOS Settings.";
+      }, { enableHighAccuracy: true, timeout: 15000 });
+    };
+    document.getElementById("loc-radius").oninput = (e) => {
+      if (j.location) { j.location.radius = Number(e.target.value) || 150; save(); }
+    };
+    document.getElementById("loc-on").onchange = (e) => {
+      if (j.location) { j.location.enabled = e.target.checked; delete geoState[j.id]; save(); syncWatch(); }
+    };
+    return;
+  }
+
+  /* rates panel */
+  el.innerHTML = '<div class="panel"><div class="row">' +
+    '<div class="field"><label>Job name (rename here)</label><input id="r-name" style="width:140px" value="' + esc(j.name) + '"></div>' +
+    '<div class="field"><label>Base rate / hour</label><input id="r-base" type="number" step="0.5" inputmode="decimal" style="width:100px" value="' + esc(r.base) + '"></div>' +
+    '<div class="field"><label>Currency</label><input id="r-cur" style="width:60px" value="' + esc(r.currency) + '"></div></div>' +
+    r.rules.map((x) =>
+      '<div class="rule" data-rule="' + x.id + '">' +
+      '<div class="field"><label>From</label><input type="time" class="ru-start" value="' + esc(x.start) + '"></div>' +
+      '<div class="field"><label>To</label><input type="time" class="ru-end" value="' + esc(x.end) + '"></div>' +
+      '<div class="field"><label>Rate</label><input type="number" step="0.5" inputmode="decimal" class="ru-rate" style="width:90px" value="' + esc(x.rate) + '"></div>' +
+      '<button class="x ru-del" style="padding-bottom:12px" aria-label="Remove rule">✕</button></div>'
+    ).join("") +
+    '<div class="rule"><button class="small" id="r-add">Add time-of-day rule</button></div>' +
+    '<p class="hint"><span class="legend" style="background:#c9cdc9"></span>base rate' +
+    '&nbsp;&nbsp;<span class="legend" style="background:var(--blue)"></span>rule rate' +
+    ' — rules can cross midnight (e.g. 23:00 → 06:00). Hours outside every rule use the base rate.</p>' +
+    '<hr class="sep"><button class="small danger" id="r-del"' + (confirmId === "job" ? ' style="border-color:#b3402f;color:#b3402f"' : "") + '>' + (confirmId === "job" ? "Tap again to delete permanently" : "Delete this job") + '</button></div>';
+
+  document.getElementById("r-name").oninput = (e) => { j.name = e.target.value; save(); renderJobs(); renderMonth(); };
+  document.getElementById("r-base").oninput = (e) => { r.base = e.target.value; save(); renderMonth(); };
+  document.getElementById("r-cur").oninput = (e) => { r.currency = e.target.value; save(); renderMonth(); };
+  document.getElementById("r-add").onclick = addRule;
+  document.getElementById("r-del").onclick = () => {
+    if (confirmId === "job") deleteJob();
+    else askConfirm("job", renderPanel);
+  };
+  el.querySelectorAll("[data-rule]").forEach((row) => {
+    const rule = r.rules.find((x) => x.id === Number(row.dataset.rule));
+    row.querySelector(".ru-start").onchange = (e) => { rule.start = e.target.value; save(); renderMonth(); };
+    row.querySelector(".ru-end").onchange = (e) => { rule.end = e.target.value; save(); renderMonth(); };
+    row.querySelector(".ru-rate").oninput = (e) => { rule.rate = e.target.value; save(); renderMonth(); };
+    row.querySelector(".ru-del").onclick = () => removeRule(rule.id);
+  });
+}
+
+function renderMonth() {
+  const j = job(); const cur = j.rates.currency || "€";
+  const list = monthEntries();
+  let tms = 0, tpay = 0;
+  const rows = list.map((e) => {
+    const b = breakdown(e.start, e.end, j.rates);
+    const dur = e.end - e.start;
+    tms += dur; tpay += b.total;
+    const strip = b.segs.map((s) =>
+      '<i class="' + (s.special ? "s" : "b") + '" style="width:' + (s.ms / dur * 100) + '%"></i>').join("");
+    return "<tr class='" + (editingId === e.id ? "editing" : "") + "'><td style='width:26%'>" + fmtDate(e.start) + (e.auto ? "<span class='autotag'>auto</span>" : "") + "</td>" +
+      "<td class='mono' style='color:var(--mut);width:24%'>" + fmtClock(e.start) + "–" + fmtClock(e.end) + "</td>" +
+      "<td><div class='strip' title='" + b.segs.map((s) => cur + s.rate + "/h · " + fmtDur(s.ms)).join(" | ") + "'>" + strip + "</div></td>" +
+      "<td class='num mono'>" + fmtDur(dur) + "</td>" +
+      "<td class='num mono'>" + cur + b.total.toFixed(2) + "</td>" +
+      "<td style='width:1px;white-space:nowrap'><button class='x' data-edit='" + e.id + "' aria-label='Edit entry'>✎</button><button class='x" + (confirmId === e.id ? " warn" : "") + "' data-del='" + e.id + "' aria-label='Delete entry'>" + (confirmId === e.id ? "sure?" : "✕") + "</button></td></tr>";
+  }).join("");
+
+  const [y, m] = view.split("-").map(Number);
+  const label = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+  document.getElementById("month").innerHTML =
+    '<div class="mnav"><h2>' + label + ' <span>· ' + esc(j.name) + '</span></h2>' +
+    '<div class="arrows"><button id="prev" aria-label="Previous month">←</button><button id="next" aria-label="Next month">→</button></div></div>' +
+    '<div class="totals">' +
+    '<div><span class="n mono">' + fmtDur(tms) + '</span><span class="l">hours</span></div>' +
+    '<div><span class="n mono">' + cur + tpay.toFixed(2) + '</span><span class="l">pay</span></div>' +
+    (list.length ? '<button class="lnk export" id="csv">Export CSV</button>' : "") + "</div>" +
+    '<div class="listcard">' +
+    (list.length
+      ? "<table><tbody>" + rows + "</tbody></table>"
+      : '<div class="empty">No entries for ' + esc(j.name) + ' this month. Check in, or add one manually.</div>') +
+    "</div>";
+
+  document.getElementById("prev").onclick = () => shiftMonth(-1);
+  document.getElementById("next").onclick = () => shiftMonth(1);
+  const csv = document.getElementById("csv"); if (csv) csv.onclick = exportCSV;
+  document.querySelectorAll("#month [data-del]").forEach((b) => b.onclick = () => {
+    const id = Number(b.dataset.del);
+    if (confirmId === id) removeEntry(id);
+    else askConfirm(id, renderMonth);
+  });
+  document.querySelectorAll("#month [data-edit]").forEach((b) => b.onclick = () => startEdit(Number(b.dataset.edit)));
+}
+
+/* ---------- clock tick (updates text only, no re-render) ---------- */
+setInterval(() => {
+  const now = Date.now();
+  document.getElementById("headclock").textContent = fmtClockS(now);
+  document.getElementById("headdate").textContent = fmtHeadDate(now);
+  const big = document.getElementById("bigclock");
+  if (big) big.textContent = data.active ? fmtDurS(now - data.active.start) : fmtClockS(now);
+  const lp = document.getElementById("livepay");
+  if (lp && data.active) {
+    const aj = activeJob();
+    lp.textContent = (aj.rates.currency || "€") + breakdown(data.active.start, now, aj.rates).total.toFixed(2);
+  }
+}, 1000);
+
+document.getElementById("headclock").textContent = fmtClockS(Date.now());
+document.getElementById("headdate").textContent = fmtHeadDate(Date.now());
+handleUrlTrigger();
+render();
+
+/* ---------- service worker ---------- */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
