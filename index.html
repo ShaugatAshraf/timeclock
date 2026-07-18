@@ -176,7 +176,7 @@ let view = monthKey(Date.now());
 const save = () => store.set(KEY, JSON.stringify(data));
 
 /* ---------- time helpers ---------- */
-const pad = (n) => String(n).padStart(2, "0");
+function pad(n) { return String(n).padStart(2, "0"); }
 function fmtClock(ms) { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
 function fmtClockS(ms) { const d = new Date(ms); return fmtClock(ms) + ":" + pad(d.getSeconds()); }
 function fmtDate(ms) { return new Date(ms).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); }
