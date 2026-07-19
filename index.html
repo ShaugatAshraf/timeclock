@@ -204,8 +204,8 @@ let panel = null; // 'manual' | 'rates' | 'loc' | 'sync' | null
 let editingId = null; // entry id being edited in the manual panel
 let confirmId = null;  // entry id or "job" awaiting delete confirmation
 let confirmTimer = null;
-let syncCfg = null;
-try { syncCfg = JSON.parse(store.get(SYNCKEY) || "null"); } catch {}
+const CLOUD_URL = ""; /* <-- PASTE your Google Apps Script web-app URL between the quotes (ends in /exec) */
+
 let syncStatus = "";
 let syncStatusErr = false;
 let pushTimer = null;
@@ -215,85 +215,54 @@ function setSyncStatus(s, err) {
   const el = document.getElementById("s-status");
   if (el) { el.textContent = s; el.className = "status " + (err ? "err" : "ok"); }
 }
-async function gh(path, opts = {}) {
-  const r = await fetch("https://api.github.com" + path, {
-    ...opts,
-    headers: {
-      "Authorization": "Bearer " + syncCfg.token,
-      "Accept": "application/vnd.github+json",
-      ...(opts.body ? { "Content-Type": "application/json" } : {}),
-    },
-  });
-  if (!r.ok) throw new Error("GitHub API " + r.status);
-  return r.json();
-}
-async function syncPush() {
-  if (!syncCfg) return;
-  try {
-    await gh("/gists/" + syncCfg.gistId, {
-      method: "PATCH",
-      body: JSON.stringify({ files: { "timeclock-data.json": { content: JSON.stringify(data) } } }),
-    });
-    setSyncStatus("Synced · " + new Date().toLocaleTimeString());
-  } catch { setSyncStatus("Sync failed — will retry on the next change", true); }
-}
-function schedulePush() { if (!syncCfg) return; clearTimeout(pushTimer); pushTimer = setTimeout(syncPush, 2500); }
-async function syncPull() {
-  if (!syncCfg) return;
-  try {
-    const g = await gh("/gists/" + syncCfg.gistId);
-    const f = g.files && g.files["timeclock-data.json"];
-    if (!f) return;
-    const content = f.truncated ? await (await fetch(f.raw_url)).text() : f.content;
-    const remote = JSON.parse(content);
-    if (remote && Array.isArray(remote.jobs) && (remote.updatedAt || 0) > (data.updatedAt || 0)) {
-      data = remote;
-      data.jobs.forEach((j) => { if (!("location" in j)) j.location = null; });
-      const s = JSON.stringify(data); store.set(KEY, s); idbSet(s);
-      render();
-      toast("Synced latest data from your cloud");
-    } else {
-      syncPush(); // local is newer (or same) — make the cloud match
+function buildRows() {
+  const rows = [];
+  for (const j of data.jobs) {
+    const es = [...j.entries].sort((a, b) => a.start - b.start);
+    for (const e of es) {
+      const b = breakdown(e.start, e.end, j.rates);
+      rows.push([
+        j.name,
+        new Date(e.start).toISOString().slice(0, 10),
+        fmtClock(e.start),
+        fmtClock(e.end),
+        Number(((e.end - e.start) / 3600000).toFixed(2)),
+        Number(b.total.toFixed(2)),
+        e.auto ? "auto" : "manual",
+      ]);
     }
-    setSyncStatus("Synced · " + new Date().toLocaleTimeString());
-  } catch { setSyncStatus("Couldn't reach GitHub — offline? Will sync when possible.", true); }
-}
-async function syncConnect() {
-  const t = document.getElementById("s-token").value.trim();
-  if (!t) return;
-  setSyncStatus("Connecting…");
-  syncCfg = { token: t, gistId: null };
-  try {
-    const list = await gh("/gists?per_page=100");
-    const found = list.find((g) => g.files && g.files["timeclock-data.json"]);
-    if (found) syncCfg.gistId = found.id;
-    else {
-      const made = await gh("/gists", {
-        method: "POST",
-        body: JSON.stringify({
-          description: "Timeclock app data (auto-synced)",
-          public: false,
-          files: { "timeclock-data.json": { content: JSON.stringify(data) } },
-        }),
-      });
-      syncCfg.gistId = made.id;
-    }
-    store.set(SYNCKEY, JSON.stringify(syncCfg));
-    idbSetK("sync", JSON.stringify(syncCfg));
-    renderPanel();
-    toast("Cloud sync connected");
-    syncPull();
-  } catch {
-    syncCfg = null;
-    setSyncStatus("Couldn't connect — check the token (it needs the gist scope).", true);
   }
+  return rows;
 }
-function syncDisconnect() {
-  syncCfg = null; clearTimeout(pushTimer);
-  store.set(SYNCKEY, "null");
-  idbSetK("sync", "null");
-  renderPanel();
-  toast("Cloud sync disconnected — data stays on this device");
+async function cloudPush() {
+  if (!CLOUD_URL) return;
+  try {
+    await fetch(CLOUD_URL, { method: "POST", body: JSON.stringify({ state: data, rows: buildRows() }) });
+    setSyncStatus("Synced \u00b7 " + new Date().toLocaleTimeString());
+  } catch { setSyncStatus("Sync failed \u2014 will retry on the next change", true); }
+}
+function schedulePush() { if (!CLOUD_URL) return; clearTimeout(pushTimer); pushTimer = setTimeout(cloudPush, 2500); }
+async function cloudPull() {
+  if (!CLOUD_URL) return;
+  try {
+    const r = await fetch(CLOUD_URL);
+    const t = (await r.text()).trim();
+    if (t) {
+      const remote = JSON.parse(t);
+      if (remote && Array.isArray(remote.jobs) && (remote.updatedAt || 0) > (data.updatedAt || 0)) {
+        data = remote;
+        data.jobs.forEach((j) => { if (!("location" in j)) j.location = null; });
+        const s = JSON.stringify(data); store.set(KEY, s); idbSet(s);
+        render();
+        toast("Synced latest data from your Google Sheet");
+      } else {
+        cloudPush(); // local is newer (or same) — make the sheet match
+      }
+    } else {
+      cloudPush(); // brand-new sheet — seed it with local data
+    }
+    setSyncStatus("Synced \u00b7 " + new Date().toLocaleTimeString());
+  } catch { setSyncStatus("Couldn't reach Google \u2014 offline? Will sync when possible.", true); }
 }
 if (typeof window !== "undefined") window.addEventListener("online", schedulePush);
 function askConfirm(id, rerender) {
@@ -598,27 +567,19 @@ function renderPanel() {
   }
 
   if (panel === "sync") {
-    if (!syncCfg) {
+    if (!CLOUD_URL) {
       el.innerHTML = '<div class="panel">' +
-        '<p class="hint" style="margin-top:0">Sync stores everything in a <strong>private Gist</strong> on your own GitHub account — free, and it survives clearing the phone\u2019s browser data. It also lets you move data between devices (last change wins).</p>' +
-        '<div class="row">' +
-        '<div class="field" style="flex:1;min-width:200px"><label>GitHub token (gist scope only)</label><input type="password" id="s-token" placeholder="ghp_\u2026" autocomplete="off"></div>' +
-        '<button class="small" id="s-connect">Connect</button></div>' +
-        '<p class="hint">Get a token: github.com \u2192 Settings \u2192 Developer settings \u2192 Personal access tokens \u2192 Tokens (classic) \u2192 Generate new token \u2192 tick <strong>only \u201cgist\u201d</strong> \u2192 Generate \u2192 paste it here. It never leaves this device and is not included in backup files.</p>' +
-        '<div class="status" id="s-status">' + syncStatus + '</div></div>';
-      document.getElementById("s-connect").onclick = syncConnect;
-      const st = document.getElementById("s-status");
-      st.className = "status " + (syncStatusErr ? "err" : "ok");
+        '<p class="hint" style="margin-top:0"><strong>Cloud not connected yet.</strong> This app syncs to a Google Sheet in your own Drive \u2014 every work session becomes a row you can open, sort, and share, and the app restores everything from it on any device (even incognito).</p>' +
+        '<p class="hint">One-time setup: create the sheet + script (instructions from Claude), copy the web-app URL ending in <code>/exec</code>, then open <code>index.html</code> in your GitHub repo, find the line near the top of the script that says <code>const CLOUD_URL = ""</code>, and paste the URL between the quotes. Commit \u2014 done forever, on every device.</p>' +
+        '<div class="status" id="s-status"></div></div>';
     } else {
       el.innerHTML = '<div class="panel">' +
-        '<div class="status ok" style="margin-top:0">Connected \u2014 auto-syncing to a private Gist on your GitHub after every change.</div>' +
+        '<div class="status ok" style="margin-top:0">Connected \u2014 auto-saving to your Google Sheet after every change.</div>' +
         '<div class="status ' + (syncStatusErr ? "err" : "ok") + '" id="s-status">' + syncStatus + '</div>' +
         '<div class="row" style="margin-top:14px">' +
-        '<button class="small" id="s-now">Sync now</button>' +
-        '<button class="small ghost" id="s-off">Disconnect</button></div>' +
-        '<p class="hint">Using the app on two devices? Connect both with the same token \u2014 the most recent change wins everywhere.</p></div>';
-      document.getElementById("s-now").onclick = syncPull;
-      document.getElementById("s-off").onclick = syncDisconnect;
+        '<button class="small" id="s-now">Sync now</button></div>' +
+        '<p class="hint">Open the spreadsheet in Google Sheets to see every session as a row (the "Entries" tab). Most recent change wins across devices.</p></div>';
+      document.getElementById("s-now").onclick = cloudPull;
     }
     return;
   }
@@ -777,21 +738,7 @@ if (!storageOK) document.getElementById("storagewarn").style.display = "block";
 handleUrlTrigger();
 render();
 
-if (syncCfg) syncPull();
-else {
-  idbGetK("sync").then((raw) => {
-    if (!raw) return;
-    try {
-      const cfg = JSON.parse(raw);
-      if (cfg && cfg.token && cfg.gistId) {
-        syncCfg = cfg;
-        store.set(SYNCKEY, raw);
-        if (panel === "sync") renderPanel();
-        syncPull();
-      }
-    } catch {}
-  });
-}
+if (CLOUD_URL) cloudPull();
 
 /* if primary storage was empty but the IndexedDB mirror has data, recover it */
 if (!store.get(KEY)) {

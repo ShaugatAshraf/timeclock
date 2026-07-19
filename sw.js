@@ -1,4 +1,4 @@
-const CACHE = "timeclock-v10";
+const CACHE = "timeclock-v11";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
